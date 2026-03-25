@@ -4,6 +4,11 @@
   "description": "Public Hyperswarm gateway for Hyperpipe relays",
   "type": "module",
   "main": "src/index.mjs",
+  "homepage": "https://hyperpipe.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/squip/hypertuna-electron-dev.git"
+  },
   "scripts": {
     "dev": "node --env-file=.env.local src/index.mjs",
     "start": "node src/index.mjs",
