@@ -19,6 +19,63 @@ import {
 const DEFAULT_TTL_SECONDS = 60;
 const DEFAULT_REFRESH_INTERVAL_MS = 30_000;
 
+export async function publishNostrEventToRelay(relayUrl, event, { WebSocketImpl = WebSocket } = {}) {
+  return await new Promise((resolve) => {
+    let settled = false;
+    let acknowledged = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.terminate();
+      } catch (_) {}
+      resolve(false);
+    }, 10_000);
+
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(ok);
+    };
+
+    const socket = new WebSocketImpl(relayUrl, {
+      handshakeTimeout: 5_000
+    });
+
+    socket.once('open', () => {
+      socket.send(JSON.stringify(['EVENT', event]));
+      setTimeout(() => {
+        if (!settled) {
+          try {
+            socket.close();
+          } catch (_) {}
+        }
+      }, 1_000);
+    });
+
+    socket.on('message', (raw) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(String(raw));
+      } catch (_) {
+        return;
+      }
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] !== 'OK') return;
+      if (String(parsed[1] || '') !== event.id) return;
+      acknowledged = true;
+      finish(parsed[2] === true);
+      try {
+        socket.close();
+      } catch (_) {}
+    });
+
+    socket.once('close', () => finish(acknowledged));
+    socket.once('error', () => finish(false));
+  });
+}
+
 class GatewayAdvertiser {
   constructor({
     logger,
@@ -393,62 +450,7 @@ class GatewayAdvertiser {
   }
 
   async #publishNostrEventToRelay(relayUrl, event) {
-    return await new Promise((resolve) => {
-      let settled = false;
-      let acknowledged = false;
-      let sent = false;
-      const timeout = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        try {
-          socket.terminate();
-        } catch (_) {}
-        resolve(sent && !acknowledged);
-      }, 10_000);
-
-      const finish = (ok) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        resolve(ok);
-      };
-
-      const socket = new WebSocket(relayUrl, {
-        handshakeTimeout: 5_000
-      });
-
-      socket.once('open', () => {
-        sent = true;
-        socket.send(JSON.stringify(['EVENT', event]));
-        setTimeout(() => {
-          if (!settled) {
-            try {
-              socket.close();
-            } catch (_) {}
-          }
-        }, 1_000);
-      });
-
-      socket.on('message', (raw) => {
-        let parsed;
-        try {
-          parsed = JSON.parse(String(raw));
-        } catch (_) {
-          return;
-        }
-        if (!Array.isArray(parsed)) return;
-        if (parsed[0] !== 'OK') return;
-        if (String(parsed[1] || '') !== event.id) return;
-        acknowledged = true;
-        finish(parsed[2] === true);
-        try {
-          socket.close();
-        } catch (_) {}
-      });
-
-      socket.once('close', () => finish(sent && !acknowledged ? true : acknowledged));
-      socket.once('error', () => finish(false));
-    });
+    return await publishNostrEventToRelay(relayUrl, event);
   }
 
   #resolveSecretUrl(secretPath) {
