@@ -10,11 +10,11 @@ import {
   encodeAnnouncement,
   deriveKeyPair,
   signAnnouncement
-} from '../../../shared/public-gateway/GatewayDiscovery.mjs';
+} from '@hyperpipe/bridge/public-gateway/GatewayDiscovery';
 import {
   buildGatewayAnnouncementEventTemplate,
   normalizeNostrRelayList
-} from '../../../shared/public-gateway/GatewayDiscoveryNostr.mjs';
+} from '@hyperpipe/bridge/public-gateway/GatewayDiscoveryNostr';
 
 const DEFAULT_TTL_SECONDS = 60;
 const DEFAULT_REFRESH_INTERVAL_MS = 30_000;

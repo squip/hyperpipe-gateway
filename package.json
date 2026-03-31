@@ -2,21 +2,35 @@
   "name": "hyperpipe-public-gateway",
   "version": "0.1.0",
   "description": "Public Hyperswarm gateway for Hyperpipe relays",
+  "private": true,
   "type": "module",
   "main": "src/index.mjs",
   "homepage": "https://hyperpipe.io",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/squip/hypertuna-electron-dev.git"
+    "url": "git+https://github.com/squip/hyperpipe.git",
+    "directory": "hyperpipe-gateway"
+  },
+  "bugs": {
+    "url": "https://github.com/squip/hyperpipe/issues"
   },
   "scripts": {
     "dev": "node --env-file=.env.local src/index.mjs",
     "start": "node src/index.mjs",
     "lint": "eslint src --ext .js,.mjs",
     "test": "node --test",
-    "blind-peer:status": "node ./bin/blind-peer-status.mjs"
+    "blind-peer:status": "node ./bin/blind-peer-status.mjs",
+    "pack:check": "npm pack --dry-run"
   },
+  "files": [
+    "bin/**",
+    "src/**",
+    "Dockerfile",
+    "README.md",
+    "package.json"
+  ],
   "dependencies": {
+    "@hyperpipe/bridge": "file:../hyperpipe-bridge",
     "@noble/curves": "^1.2.0",
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@nostr-dev-kit/wot": "^1.0.0",

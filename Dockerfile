@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app/public-gateway
 
@@ -12,14 +12,14 @@ RUN apt-get update && \
       libsodium-dev && \
     rm -rf /var/lib/apt/lists/*
 
+COPY hyperpipe-bridge /app/hyperpipe-bridge
 COPY hyperpipe-gateway/package*.json ./
 RUN npm install --omit=dev
 
 COPY hyperpipe-gateway/src ./src
-COPY shared /app/shared
+COPY hyperpipe-gateway/bin ./bin
+COPY hyperpipe-gateway/README.md ./README.md
 
-RUN npm install --prefix /app/shared --omit=dev
-
-ENV NODE_PATH=/app/public-gateway/node_modules:/app/shared/node_modules
+ENV NODE_PATH=/app/public-gateway/node_modules
 EXPOSE 4430
 CMD ["node", "src/index.mjs"]

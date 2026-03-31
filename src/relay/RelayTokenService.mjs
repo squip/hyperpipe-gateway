@@ -1,7 +1,7 @@
 import {
   issueClientToken,
   verifyClientToken
-} from '../../../shared/auth/PublicGatewayTokens.mjs';
+} from '@hyperpipe/bridge/auth/PublicGatewayTokens';
 
 const DEFAULT_TTL_SECONDS = 3600;
 const DEFAULT_REFRESH_WINDOW_SECONDS = 300;
