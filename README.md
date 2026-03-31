@@ -1,55 +1,16 @@
-# Public Gateway Revamp
+# Hyperpipe Gateway
 
-This document captures the high-level goals and task breakdown for reviving a public Hyperswarm-backed gateway that reuses the existing relay protocol end-to-end.
+`hyperpipe-gateway` is the public HTTPS/WebSocket edge service for Hyperpipe-hosted
+relays. It consumes the published `@squip/hyperpipe-bridge` package and forwards
+traffic through the same relay protocol used by `@squip/hyperpipe-core`.
 
-## Goals
-- Allow remote clients to reach user-hosted relays via a public HTTPS/WebSocket edge.
-- Preserve existing worker-side behaviour while proxying traffic over Hyperswarm using the shared `RelayProtocol`.
-- Support optional observability and security features so the gateway can operate in shared infrastructure.
+It provides:
 
-## Deliverables
-1. **Shared Hyperswarm Client Library**
-   - Extract/rewrite the legacy gateway client into an ES module that can be consumed by the public gateway.
-   - Responsibilities: connection pooling, health checks, forwarding of HTTP/WebSocket frames, event streaming.
-
-2. **Public Gateway Service**
-   - New Node.js service (Express + `ws`) that terminates HTTPS/WebSocket, validates tokens, and bridges messages to the shared client library.
-   - Provide configuration via env/config file for bind address, TLS, Redis, metrics, etc.
-
-3. **Registration and Auth Flow**
-   - Worker API endpoint to register a relay with the public gateway.
-   - Signed registration payloads and token generation/validation utilities shared between worker and gateway.
-
-4. **Session & Event Plumbing**
-   - Adapter that mirrors `handleWebSocket` semantics: connection bookkeeping, message queueing, event polling, error propagation.
-   - Health-check scheduling and failover matching the worker’s expectations.
-
-5. **Observability & Ops** (optional but planned)
-   - Structured logging hooks.
-   - Prometheus-style metrics exporter (sessions, peer health, throughput).
-   - Rate limiting and per-token usage accounting.
-
-6. **Documentation & Tooling**
-   - Deployment instructions (Dockerfile, env sample).
-   - Developer testing workflow for end-to-end relay access through the public gateway.
-
-## Task Breakdown
-- [x] Create shared client module under `@squip/hyperpipe-bridge/public-gateway/HyperswarmClient` reusing protocol logic.
-- [x] Implement connection pool with health tracking and peer selection.
-- [x] Build public gateway service entrypoint (`hyperpipe-gateway/server.mjs`) with Express, `ws`, TLS support.
-- [x] Implement registration API in core (`@squip/hyperpipe-core`) to produce signed payloads and manage relay listings.
-- [x] Add token issuing/validation helpers in `@squip/hyperpipe-bridge/auth/PublicGatewayTokens`.
-- [x] Wire worker to call public gateway registration endpoint when user enables remote access.
-- [x] Implement WebSocket session adapter bridging to `RelayProtocol` requests.
-- [x] Add metrics/logging middleware and expose `/metrics` endpoint.
-- [x] Provide Dockerfile + configuration examples for deployment.
-- [x] Document operational runbook in this folder.
-
-## Open Questions
-- Where to persist registration metadata for multi-node deployments (initial pass can use in-memory store with optional Redis adapter).
-- Desired token lifetime and renewal UX.
-
-This roadmap will be updated as implementation proceeds.
+- public HTTPS and WebSocket ingress for remote relay access
+- sponsor/member token issuance and verification
+- optional allowlist, blocklist, and web-of-trust host authorization
+- discovery publishing, health checks, metrics, and structured logging
+- Docker-oriented deployment support
 
 ## Running the Gateway
 
