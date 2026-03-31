@@ -4,6 +4,7 @@
   "description": "Public Hyperswarm gateway for Hyperpipe relays",
   "private": true,
   "type": "module",
+  "license": "Apache-2.0",
   "main": "src/index.mjs",
   "homepage": "https://hyperpipe.io",
   "repository": {
@@ -26,6 +27,7 @@
     "bin/**",
     "src/**",
     "Dockerfile",
+    "LICENSE",
     "README.md",
     "package.json"
   ],
