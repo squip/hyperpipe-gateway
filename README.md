@@ -94,7 +94,7 @@ docker run -p 4430:4430 \
   hyperpipe/hyperpipe-gateway
 ```
 
-For Compose deployments ensure the `hyperpipe-bridge/` package is available during image build so the service can install its local `@squip/hyperpipe-bridge` dependency.
+For container builds, install dependencies from npm before copying the runtime source. The gateway now consumes the published `@squip/hyperpipe-bridge` package and no longer expects a sibling Bridge workspace in the image context.
 
 The gateway now defaults to relay-scoped bearer auth for restricted hosting. `GATEWAY_REGISTRATION_SECRET` is still required because the gateway signs and verifies sponsor/member tokens with that secret even when `GATEWAY_AUTH_HOST_POLICY` is not `open`.
 

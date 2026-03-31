@@ -171,12 +171,15 @@ class MemoryRegistrationStore {
     const ttlSeconds = Number.isFinite(this.tokenTtlSeconds)
       ? this.tokenTtlSeconds
       : this.ttlSeconds;
+    const explicitExpiresAt = Number.isFinite(metadata?.expiresAt) ? Number(metadata.expiresAt) : null;
     const record = {
       ...metadata,
       recordedAt: Date.now(),
-      expiresAt: Number.isFinite(ttlSeconds) && ttlSeconds > 0
-        ? Date.now() + ttlSeconds * 1000
-        : null
+      expiresAt: explicitExpiresAt ?? (
+        Number.isFinite(ttlSeconds) && ttlSeconds > 0
+          ? Date.now() + ttlSeconds * 1000
+          : null
+      )
     };
     this.tokenMetadata.set(relayKey, record);
   }
