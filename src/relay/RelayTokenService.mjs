@@ -1,7 +1,7 @@
 import {
   issueClientToken,
   verifyClientToken
-} from '@hyperpipe/bridge/auth/PublicGatewayTokens';
+} from '@squip/hyperpipe-bridge/auth/PublicGatewayTokens';
 
 const DEFAULT_TTL_SECONDS = 3600;
 const DEFAULT_REFRESH_WINDOW_SECONDS = 300;

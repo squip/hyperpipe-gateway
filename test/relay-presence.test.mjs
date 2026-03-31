@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import PublicGatewayService from '../src/PublicGatewayService.mjs';
 import MemoryRegistrationStore from '../src/stores/MemoryRegistrationStore.mjs';
-import { createSignature } from '@hyperpipe/bridge/auth/PublicGatewayTokens';
+import { createSignature } from '@squip/hyperpipe-bridge/auth/PublicGatewayTokens';
 
 function createLogger() {
   const noop = () => {};

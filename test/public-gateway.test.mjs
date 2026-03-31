@@ -6,7 +6,7 @@ import {
   verifyClientToken,
   createSignature,
   verifySignature
-} from '@hyperpipe/bridge/auth/PublicGatewayTokens';
+} from '@squip/hyperpipe-bridge/auth/PublicGatewayTokens';
 import MemoryRegistrationStore from '../src/stores/MemoryRegistrationStore.mjs';
 
 const SECRET = 'test-secret-key';

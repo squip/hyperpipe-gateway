@@ -7,11 +7,11 @@ import { schnorr } from '@noble/curves/secp256k1';
 
 import PublicGatewayService from '../src/PublicGatewayService.mjs';
 import MemoryRegistrationStore from '../src/stores/MemoryRegistrationStore.mjs';
-import { deriveKeyPair } from '@hyperpipe/bridge/public-gateway/GatewayDiscovery';
+import { deriveKeyPair } from '@squip/hyperpipe-bridge/public-gateway/GatewayDiscovery';
 import {
   createOperatorAttestationRequest,
   signOperatorAttestationRequest
-} from '@hyperpipe/bridge/public-gateway/OperatorAttestation';
+} from '@squip/hyperpipe-bridge/public-gateway/OperatorAttestation';
 
 const ACCOUNTS = {
   operator: {

@@ -17,14 +17,14 @@ import {
   forwardMessageToPeerHyperswarm,
   getEventsFromPeerHyperswarm,
   requestFileFromPeer
-} from '@hyperpipe/bridge/public-gateway/HyperswarmClient';
-import { computeSecretHash, deriveKeyPair } from '@hyperpipe/bridge/public-gateway/GatewayDiscovery';
-import { verifyOperatorAttestation } from '@hyperpipe/bridge/public-gateway/OperatorAttestation';
+} from '@squip/hyperpipe-bridge/public-gateway/HyperswarmClient';
+import { computeSecretHash, deriveKeyPair } from '@squip/hyperpipe-bridge/public-gateway/GatewayDiscovery';
+import { verifyOperatorAttestation } from '@squip/hyperpipe-bridge/public-gateway/OperatorAttestation';
 import {
   issueClientToken,
   verifySignature,
   verifyClientToken
-} from '@hyperpipe/bridge/auth/PublicGatewayTokens';
+} from '@squip/hyperpipe-bridge/auth/PublicGatewayTokens';
 import {
   metricsMiddleware,
   sessionGauge,
@@ -52,8 +52,8 @@ import HyperbeeRelayHost from './relay/HyperbeeRelayHost.mjs';
 import RelayWebsocketController from './relay/RelayWebsocketController.mjs';
 import RelayDispatcherService from './relay/RelayDispatcherService.mjs';
 import RelayTokenService from './relay/RelayTokenService.mjs';
-import PublicGatewayHyperbeeAdapter from '@hyperpipe/bridge/public-gateway/PublicGatewayHyperbeeAdapter';
-import { openHyperbeeReplicationChannel } from '@hyperpipe/bridge/public-gateway/hyperbeeReplicationChannel';
+import PublicGatewayHyperbeeAdapter from '@squip/hyperpipe-bridge/public-gateway/PublicGatewayHyperbeeAdapter';
+import { openHyperbeeReplicationChannel } from '@squip/hyperpipe-bridge/public-gateway/hyperbeeReplicationChannel';
 import BlindPeerService from './blind-peer/BlindPeerService.mjs';
 import BlindPeerReplicaManager from './blind-peer/BlindPeerReplicaManager.mjs';
 import { buildWotGraphFromRelays } from './utils/WotGraphLoader.mjs';

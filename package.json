@@ -30,7 +30,7 @@
     "package.json"
   ],
   "dependencies": {
-    "@hyperpipe/bridge": "^0.1.0",
+    "@squip/hyperpipe-bridge": "^0.1.0",
     "@noble/curves": "^1.2.0",
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@nostr-dev-kit/wot": "^1.0.0",

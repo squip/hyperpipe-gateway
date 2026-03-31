@@ -10,11 +10,11 @@ import {
   encodeAnnouncement,
   deriveKeyPair,
   signAnnouncement
-} from '@hyperpipe/bridge/public-gateway/GatewayDiscovery';
+} from '@squip/hyperpipe-bridge/public-gateway/GatewayDiscovery';
 import {
   buildGatewayAnnouncementEventTemplate,
   normalizeNostrRelayList
-} from '@hyperpipe/bridge/public-gateway/GatewayDiscoveryNostr';
+} from '@squip/hyperpipe-bridge/public-gateway/GatewayDiscoveryNostr';
 
 const DEFAULT_TTL_SECONDS = 60;
 const DEFAULT_REFRESH_INTERVAL_MS = 30_000;

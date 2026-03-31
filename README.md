@@ -34,11 +34,11 @@ This document captures the high-level goals and task breakdown for reviving a pu
    - Developer testing workflow for end-to-end relay access through the public gateway.
 
 ## Task Breakdown
-- [x] Create shared client module under `@hyperpipe/bridge/public-gateway/HyperswarmClient` reusing protocol logic.
+- [x] Create shared client module under `@squip/hyperpipe-bridge/public-gateway/HyperswarmClient` reusing protocol logic.
 - [x] Implement connection pool with health tracking and peer selection.
 - [x] Build public gateway service entrypoint (`hyperpipe-gateway/server.mjs`) with Express, `ws`, TLS support.
-- [x] Implement registration API in core (`@hyperpipe/core`) to produce signed payloads and manage relay listings.
-- [x] Add token issuing/validation helpers in `@hyperpipe/bridge/auth/PublicGatewayTokens`.
+- [x] Implement registration API in core (`@squip/hyperpipe-core`) to produce signed payloads and manage relay listings.
+- [x] Add token issuing/validation helpers in `@squip/hyperpipe-bridge/auth/PublicGatewayTokens`.
 - [x] Wire worker to call public gateway registration endpoint when user enables remote access.
 - [x] Implement WebSocket session adapter bridging to `RelayProtocol` requests.
 - [x] Add metrics/logging middleware and expose `/metrics` endpoint.
@@ -94,7 +94,7 @@ docker run -p 4430:4430 \
   hyperpipe/hyperpipe-gateway
 ```
 
-For Compose deployments ensure the `hyperpipe-bridge/` package is available during image build so the service can install its local `@hyperpipe/bridge` dependency.
+For Compose deployments ensure the `hyperpipe-bridge/` package is available during image build so the service can install its local `@squip/hyperpipe-bridge` dependency.
 
 The gateway now defaults to relay-scoped bearer auth for restricted hosting. `GATEWAY_REGISTRATION_SECRET` is still required because the gateway signs and verifies sponsor/member tokens with that secret even when `GATEWAY_AUTH_HOST_POLICY` is not `open`.
 
