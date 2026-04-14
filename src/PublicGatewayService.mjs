@@ -6028,11 +6028,12 @@ class PublicGatewayService {
       || registration?.blind_peering_public_key
       || null
     );
-    if (registrationBlindPeeringKey && usedLegacyRegistrationAuth) {
+    if (registrationBlindPeeringKey) {
       this.logger?.info?.('[PublicGateway] Trusting blind peering key from relay registration', {
         relayKey: registration.relayKey,
         relayKeyType,
-        blindPeeringPublicKey: registrationBlindPeeringKey.slice(0, 16)
+        blindPeeringPublicKey: registrationBlindPeeringKey.slice(0, 16),
+        authMode: usedLegacyRegistrationAuth ? 'shared-secret' : 'sponsor-bearer'
       });
       this.blindPeerService?.addTrustedPeer(registrationBlindPeeringKey);
     }
