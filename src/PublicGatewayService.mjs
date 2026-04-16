@@ -72,6 +72,9 @@ const JOIN_TRACE_ROUTE_HEADER = 'x-hyperpipe-trace-route';
 const JOIN_TRACE_PURPOSE_HEADER = 'x-hyperpipe-trace-purpose';
 const GATEWAY_REQUEST_ID_HEADER = 'x-hyperpipe-gateway-request-id';
 const DEFAULT_RELAY_PRESENCE_FRESHNESS_MS = 2 * 60 * 1000;
+const DEFAULT_OPEN_JOIN_DURABILITY_WAIT_MS = 4000;
+const DEFAULT_OPEN_JOIN_DURABILITY_POLL_MS = 150;
+const DEFAULT_OPEN_JOIN_DURABILITY_NUDGE_MS = 500;
 const AUTHORITATIVE_MIRROR_FAST_FORWARD_SOURCES = new Set([
   'blind-peer-mirror',
   'blind-peer-rehydrated',
@@ -2489,7 +2492,17 @@ class PublicGatewayService {
       this.logger?.info?.('[PublicGateway] Mirror fast-forward proof unavailable', {
         relayKey,
         coreKey: targetKey ? targetKey.slice(0, 16) : null,
-        proofSource: mirrorPayload?.fastForwardSource || null
+        proofSource: mirrorPayload?.fastForwardSource || null,
+        writerCommitCheckpoint: summarizeWriterCommitCheckpoint(checkpoint),
+        currentFastForward: currentFastForward && typeof currentFastForward === 'object'
+          ? {
+              key: typeof currentFastForward.key === 'string' ? currentFastForward.key.slice(0, 16) : null,
+              signedLength: Number.isFinite(currentFastForward.signedLength) ? Math.trunc(currentFastForward.signedLength) : null,
+              length: Number.isFinite(currentFastForward.length) ? Math.trunc(currentFastForward.length) : null,
+              proofSource: currentFastForward.proofSource || null,
+              proofAuthoritative: currentFastForward.proofAuthoritative === true
+            }
+          : null
       });
       return mirrorPayload;
     }
@@ -2522,7 +2535,17 @@ class PublicGatewayService {
       signedLength: proofSignedLength,
       length: proofLength,
       proofSource,
-      proofAuthoritative
+      proofAuthoritative,
+      writerCommitCheckpoint: summarizeWriterCommitCheckpoint(checkpoint),
+      currentFastForward: currentFastForward && typeof currentFastForward === 'object'
+        ? {
+            key: typeof currentFastForward.key === 'string' ? currentFastForward.key.slice(0, 16) : null,
+            signedLength: Number.isFinite(currentFastForward.signedLength) ? Math.trunc(currentFastForward.signedLength) : null,
+            length: Number.isFinite(currentFastForward.length) ? Math.trunc(currentFastForward.length) : null,
+            proofSource: currentFastForward.proofSource || null,
+            proofAuthoritative: currentFastForward.proofAuthoritative === true
+          }
+        : null
     });
 
     return {
@@ -2531,6 +2554,84 @@ class PublicGatewayService {
       fastForwardSource: proofSource || mirrorPayload.fastForwardSource || null,
       fastForwardAuthoritative: proofAuthoritative
     };
+  }
+
+  #mergeMirrorFastForwardProof(mirrorPayload = null, targetKey = null, proof = null) {
+    if (!mirrorPayload || typeof mirrorPayload !== 'object' || !proof || typeof proof !== 'object') {
+      return mirrorPayload;
+    }
+    const currentFastForward = mirrorPayload?.fastForward && typeof mirrorPayload.fastForward === 'object'
+      ? { ...mirrorPayload.fastForward }
+      : null;
+    const proofKey = normalizeCoreRefString(proof.key || targetKey);
+    const proofLength = Number.isFinite(proof.length) ? Math.trunc(proof.length) : null;
+    const proofSignedLength = Number.isFinite(proof.signedLength)
+      ? Math.trunc(proof.signedLength)
+      : proofLength;
+    const proofSource = normalizeFastForwardSource(proof.proofSource || 'blind-peer-mirror');
+    const proofAuthoritative =
+      proof.proofAuthoritative === true
+      || isAuthoritativeFastForwardSource(proofSource);
+
+    const nextFastForward = {
+      ...(currentFastForward || {}),
+      key: proofKey || targetKey,
+      checkpointKey: proofKey || targetKey,
+      length: proofLength,
+      signedLength: proofSignedLength,
+      proofSource: proofSource || null,
+      proofAuthoritative
+    };
+    if (Number.isFinite(proof.observedAt)) nextFastForward.observedAt = Math.trunc(proof.observedAt);
+    if (Number.isFinite(proof.activeAt)) nextFastForward.activeAt = Math.trunc(proof.activeAt);
+    if (Number.isFinite(proof.lagMs)) nextFastForward.lagMs = Math.trunc(proof.lagMs);
+
+    return {
+      ...mirrorPayload,
+      fastForward: nextFastForward,
+      fastForwardSource: proofSource || mirrorPayload.fastForwardSource || null,
+      fastForwardAuthoritative: proofAuthoritative
+    };
+  }
+
+  async #waitForOpenJoinDurabilityProof(relayKey, writerCommitCheckpoint = null, mirrorPayload = null) {
+    if (!mirrorPayload || typeof mirrorPayload !== 'object') return mirrorPayload;
+    const checkpoint = normalizeWriterCommitCheckpoint(writerCommitCheckpoint);
+    const targetKey = checkpoint?.systemKey || null;
+    if (!targetKey || !this.blindPeerService?.waitForCoreFastForwardProof) {
+      return mirrorPayload;
+    }
+
+    const timeoutMs = Number.isFinite(this.config?.relay?.openJoinDurabilityWaitMs)
+      ? Math.trunc(this.config.relay.openJoinDurabilityWaitMs)
+      : DEFAULT_OPEN_JOIN_DURABILITY_WAIT_MS;
+    const pollIntervalMs = Number.isFinite(this.config?.relay?.openJoinDurabilityPollMs)
+      ? Math.trunc(this.config.relay.openJoinDurabilityPollMs)
+      : DEFAULT_OPEN_JOIN_DURABILITY_POLL_MS;
+    const nudgeIntervalMs = Number.isFinite(this.config?.relay?.openJoinDurabilityNudgeMs)
+      ? Math.trunc(this.config.relay.openJoinDurabilityNudgeMs)
+      : DEFAULT_OPEN_JOIN_DURABILITY_NUDGE_MS;
+
+    const proof = await this.blindPeerService.waitForCoreFastForwardProof(targetKey, {
+      minSignedLength: checkpoint?.systemSignedLength ?? null,
+      timeoutMs,
+      pollIntervalMs,
+      nudgeIntervalMs
+    });
+    if (!proof || typeof proof !== 'object') {
+      return mirrorPayload;
+    }
+
+    this.logger?.info?.('[PublicGateway] Open join durability wait completed', {
+      relayKey,
+      coreKey: targetKey.slice(0, 16),
+      waitedMs: timeoutMs,
+      signedLength: Number.isFinite(proof.signedLength) ? Math.trunc(proof.signedLength) : null,
+      proofSource: proof.proofSource || null,
+      proofAuthoritative: proof.proofAuthoritative === true,
+      writerCommitCheckpoint: summarizeWriterCommitCheckpoint(checkpoint)
+    });
+    return this.#mergeMirrorFastForwardProof(mirrorPayload, targetKey, proof);
   }
 
   async #storeMirrorMetadataPayload(relayKey, payload) {
@@ -6954,12 +7055,45 @@ class PublicGatewayService {
           proofAuthoritative: mirrorFastForwardAuthoritative
         }
       );
-      if (durability.durableAtServe !== true) {
-        const durabilityErrorCode = durability.reason === 'missing-mirror-fast-forward'
+      let finalMirrorPayload = mirrorPayload;
+      let finalDurability = durability;
+      if (
+        finalDurability.durableAtServe !== true
+        && writerCommitCheckpoint?.systemKey
+        && (
+          finalDurability.reason === 'mirror-proof-not-authoritative'
+          || finalDurability.reason === 'mirror-behind-lease-signed-length'
+          || finalDurability.reason === 'missing-mirror-fast-forward'
+        )
+      ) {
+        finalMirrorPayload = await this.#waitForOpenJoinDurabilityProof(
+          relayKey,
+          writerCommitCheckpoint,
+          mirrorPayload
+        );
+        const waitedMirrorFastForwardSource = typeof finalMirrorPayload?.fastForwardSource === 'string'
+          ? finalMirrorPayload.fastForwardSource
+          : mirrorFastForwardSource;
+        const waitedMirrorFastForwardAuthoritative =
+          finalMirrorPayload?.fastForwardAuthoritative === true
+          || finalMirrorPayload?.fastForward?.proofAuthoritative === true
+          || finalMirrorPayload?.fastForward?.authoritative === true;
+        finalDurability = evaluateWriterCheckpointDurability(
+          writerCommitCheckpoint,
+          finalMirrorPayload?.fastForward || null,
+          {
+            proofSource: waitedMirrorFastForwardSource,
+            proofAuthoritative: waitedMirrorFastForwardAuthoritative
+          }
+        );
+      }
+      mirrorPayload = finalMirrorPayload;
+      if (finalDurability.durableAtServe !== true) {
+        const durabilityErrorCode = finalDurability.reason === 'missing-mirror-fast-forward'
           ? 'open-join-durability-proof-missing'
-          : durability.reason === 'mirror-proof-not-authoritative'
+          : finalDurability.reason === 'mirror-proof-not-authoritative'
             ? 'open-join-durability-proof-unverified'
-            : durability.reason === 'mirror-behind-lease-signed-length'
+            : finalDurability.reason === 'mirror-behind-lease-signed-length'
               ? 'open-join-mirror-behind-lease'
               : 'open-join-non-durable-lease';
         this.logger?.warn?.('[PublicGateway] Open join lease rejected: non-durable proof', {
@@ -6972,9 +7106,9 @@ class PublicGatewayService {
           poolAfter: poolAfterCount,
           writerLeaseId: writerLeaseId ? writerLeaseId.slice(0, 24) : null,
           writerCommitCheckpoint: summarizeWriterCommitCheckpoint(writerCommitCheckpoint),
-          writerDurabilityAtServe: durability.durableAtServe,
-          writerDurabilityReason: durability.reason,
-          writerDurabilityMirror: durability.mirror || null
+          writerDurabilityAtServe: finalDurability.durableAtServe,
+          writerDurabilityReason: finalDurability.reason,
+          writerDurabilityMirror: finalDurability.mirror || null
         });
         this.#logJoinTrace('warn', 'open-join-response', trace, {
           statusCode: 409,
@@ -6986,18 +7120,18 @@ class PublicGatewayService {
           poolAfter: poolAfterCount,
           writerLeaseId: writerLeaseId ? writerLeaseId.slice(0, 24) : null,
           writerCommitCheckpoint: summarizeWriterCommitCheckpoint(writerCommitCheckpoint),
-          writerDurabilityAtServe: durability.durableAtServe,
-          writerDurabilityReason: durability.reason,
-          writerDurabilityProofSource: durability?.mirror?.proofSource || null,
-          writerDurabilityProofAuthoritative: durability?.mirror?.proofAuthoritative === true,
-          writerDurabilityMirror: durability.mirror || null
+          writerDurabilityAtServe: finalDurability.durableAtServe,
+          writerDurabilityReason: finalDurability.reason,
+          writerDurabilityProofSource: finalDurability?.mirror?.proofSource || null,
+          writerDurabilityProofAuthoritative: finalDurability?.mirror?.proofAuthoritative === true,
+          writerDurabilityMirror: finalDurability.mirror || null
         });
         return res.status(409).json({
           error: durabilityErrorCode,
-          writerDurabilityAtServe: durability.durableAtServe,
-          writerDurabilityReason: durability.reason,
-          writerDurabilityProofSource: durability?.mirror?.proofSource || null,
-          writerDurabilityProofAuthoritative: durability?.mirror?.proofAuthoritative === true
+          writerDurabilityAtServe: finalDurability.durableAtServe,
+          writerDurabilityReason: finalDurability.reason,
+          writerDurabilityProofSource: finalDurability?.mirror?.proofSource || null,
+          writerDurabilityProofAuthoritative: finalDurability?.mirror?.proofAuthoritative === true
         });
       }
       const resolvedAutobaseLocal = autobaseLocal || writerCoreHex || null;
@@ -7039,10 +7173,10 @@ class PublicGatewayService {
         writerCoreHex: writerCoreHex ? String(writerCoreHex).slice(0, 16) : null,
         writerLeaseId: writerLeaseId ? writerLeaseId.slice(0, 24) : null,
         writerCommitCheckpoint: summarizeWriterCommitCheckpoint(writerCommitCheckpoint),
-        writerDurabilityAtServe: durability.durableAtServe,
-        writerDurabilityReason: durability.reason,
-        writerDurabilityProofSource: durability?.mirror?.proofSource || null,
-        writerDurabilityProofAuthoritative: durability?.mirror?.proofAuthoritative === true,
+        writerDurabilityAtServe: finalDurability.durableAtServe,
+        writerDurabilityReason: finalDurability.reason,
+        writerDurabilityProofSource: finalDurability?.mirror?.proofSource || null,
+        writerDurabilityProofAuthoritative: finalDurability?.mirror?.proofAuthoritative === true,
         issuedAt: lease.issuedAt || null,
         expiresAt: lease.expiresAt || null,
         memberTokenExpiresAt: memberToken.expiresAt
@@ -7058,10 +7192,10 @@ class PublicGatewayService {
         writerCoreHex: writerCoreHex ? String(writerCoreHex).slice(0, 16) : null,
         writerLeaseId: writerLeaseId ? writerLeaseId.slice(0, 24) : null,
         writerCommitCheckpoint: summarizeWriterCommitCheckpoint(writerCommitCheckpoint),
-        writerDurabilityAtServe: durability.durableAtServe,
-        writerDurabilityReason: durability.reason,
-        writerDurabilityProofSource: durability?.mirror?.proofSource || null,
-        writerDurabilityProofAuthoritative: durability?.mirror?.proofAuthoritative === true,
+        writerDurabilityAtServe: finalDurability.durableAtServe,
+        writerDurabilityReason: finalDurability.reason,
+        writerDurabilityProofSource: finalDurability?.mirror?.proofSource || null,
+        writerDurabilityProofAuthoritative: finalDurability?.mirror?.proofAuthoritative === true,
         issuedAt: lease.issuedAt || null,
         expiresAt: lease.expiresAt || null,
         memberTokenExpiresAt: memberToken.expiresAt

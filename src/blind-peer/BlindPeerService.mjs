@@ -5,6 +5,9 @@ import HypercoreId from 'hypercore-id-encoding';
 
 const DEFAULT_STORAGE_SUBDIR = 'blind-peer-data';
 const DEFAULT_MIRROR_STALE_THRESHOLD_MS = 10 * 60 * 1000;
+const DEFAULT_CORE_PROOF_WAIT_TIMEOUT_MS = 4000;
+const DEFAULT_CORE_PROOF_WAIT_POLL_MS = 150;
+const DEFAULT_CORE_PROOF_NUDGE_INTERVAL_MS = 500;
 
 async function loadBlindPeerModule() {
   const mod = await import('blind-peer');
@@ -82,6 +85,12 @@ function decodeKey(key) {
   return buffer ? Buffer.from(buffer) : null;
 }
 
+export function deriveMirrorIdentifier(record = {}) {
+  const keyStr = toKeyString(record?.key);
+  const referrer = record?.referrer ? toKeyString(record.referrer) : null;
+  return referrer && keyStr && referrer === keyStr ? referrer : null;
+}
+
 export default class BlindPeerService extends EventEmitter {
   constructor({ logger, config, metrics } = {}) {
     super();
@@ -118,6 +127,7 @@ export default class BlindPeerService extends EventEmitter {
       lastEvictions: 0
     };
     this.coreMetadata = new Map();
+    this.fastForwardProofSnapshot = new Map();
     this.dispatcherAssignments = new Map();
     this.dispatcherAssignmentTimers = new Map();
     this.metadataPersistPath = this.config.metadataPersistPath
@@ -1117,7 +1127,7 @@ export default class BlindPeerService extends EventEmitter {
   #onBlindPeerAddCore(record, stream, context = {}) {
     if (!record?.key) return;
     const ownerPeerKey = stream?.remotePublicKey ? toKeyString(stream.remotePublicKey) : null;
-    const identifier = record?.referrer ? toKeyString(record.referrer) : null;
+    const identifier = deriveMirrorIdentifier(record);
 
     const metadataEntry = this.#recordCoreMetadata(record.key, {
       ownerPeerKey,
@@ -1439,6 +1449,33 @@ export default class BlindPeerService extends EventEmitter {
       proofSource: 'blind-peer-mirror',
       proofAuthoritative: true
     };
+    const snapshotKey = proof.key || normalizedKey;
+    const previousProof = snapshotKey ? this.fastForwardProofSnapshot.get(snapshotKey) || null : null;
+    const changed =
+      !previousProof
+      || previousProof.signedLength !== proof.signedLength
+      || previousProof.length !== proof.length
+      || previousProof.healthy !== proof.healthy;
+    if (snapshotKey) {
+      this.fastForwardProofSnapshot.set(snapshotKey, {
+        signedLength: proof.signedLength,
+        length: proof.length,
+        healthy: proof.healthy
+      });
+    }
+    if (changed) {
+      this.logger?.info?.({
+        key: proof.key,
+        signedLength: proof.signedLength,
+        length: proof.length,
+        observedAt: proof.observedAt,
+        activeAt: proof.activeAt,
+        lagMs: proof.lagMs,
+        healthy: proof.healthy,
+        previousSignedLength: previousProof?.signedLength ?? null,
+        previousLength: previousProof?.length ?? null
+      }, '[BlindPeer][DurabilityDiag] Core fast-forward proof advanced');
+    }
     this.logger?.debug?.({
       key: proof.key,
       signedLength: proof.signedLength,
@@ -1446,6 +1483,110 @@ export default class BlindPeerService extends EventEmitter {
       healthy: proof.healthy
     }, '[BlindPeer] Core fast-forward proof resolved');
     return proof;
+  }
+
+  async nudgeCoreHydration(coreKey) {
+    if (!coreKey || !this.blindPeer?.store) return false;
+    const decoded = decodeKey(coreKey);
+    const normalizedKey = toKeyString(decoded || coreKey);
+    if (!decoded || !normalizedKey) return false;
+
+    try {
+      const core = this.blindPeer.store.get({ key: decoded });
+      await core.ready();
+
+      const discoveryId = Buffer.from(core.discoveryKey).toString('hex');
+      const tracker = this.blindPeer?.activeReplication?.get?.(discoveryId) || null;
+      if (tracker && !tracker.record && typeof tracker.refresh === 'function') {
+        await tracker.refresh();
+      }
+
+      const record = tracker?.record || await this.blindPeer.db.getCoreRecord(decoded);
+      const downloadStart = Number.isFinite(record?.blocksCleared) ? Math.max(0, Math.trunc(record.blocksCleared)) : 0;
+      try {
+        core.download({ start: downloadStart, end: -1 });
+      } catch (_) {}
+
+      if (tracker && typeof tracker.announceToReferrer === 'function') {
+        tracker.announceToReferrer();
+      }
+
+      this.logger?.info?.({
+        key: normalizedKey,
+        hasTracker: !!tracker,
+        hasRecord: !!record,
+        referrer: toKeyString(record?.referrer),
+        coreLength: core.length,
+        contiguousLength: core.contiguousLength,
+        downloadStart
+      }, '[BlindPeer] Nudged core hydration');
+      return true;
+    } catch (error) {
+      this.logger?.debug?.({
+        key: normalizedKey,
+        err: error?.message || error
+      }, '[BlindPeer] Failed to nudge core hydration');
+      return false;
+    }
+  }
+
+  async waitForCoreFastForwardProof(coreKey, {
+    minSignedLength = null,
+    timeoutMs = DEFAULT_CORE_PROOF_WAIT_TIMEOUT_MS,
+    pollIntervalMs = DEFAULT_CORE_PROOF_WAIT_POLL_MS,
+    nudgeIntervalMs = DEFAULT_CORE_PROOF_NUDGE_INTERVAL_MS
+  } = {}) {
+    const normalizedKey = toKeyString(coreKey);
+    if (!normalizedKey) return null;
+
+    const targetSignedLength = Number.isFinite(minSignedLength) ? Math.trunc(minSignedLength) : null;
+    const waitTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? Math.trunc(timeoutMs)
+      : DEFAULT_CORE_PROOF_WAIT_TIMEOUT_MS;
+    const waitPoll = Number.isFinite(pollIntervalMs) && pollIntervalMs > 0
+      ? Math.trunc(pollIntervalMs)
+      : DEFAULT_CORE_PROOF_WAIT_POLL_MS;
+    const nudgeEvery = Number.isFinite(nudgeIntervalMs) && nudgeIntervalMs >= 0
+      ? Math.trunc(nudgeIntervalMs)
+      : DEFAULT_CORE_PROOF_NUDGE_INTERVAL_MS;
+
+    const satisfies = (proof) => {
+      if (!proof || typeof proof !== 'object') return false;
+      if (proof.proofAuthoritative !== true) return false;
+      if (!Number.isFinite(targetSignedLength)) return true;
+      return Number.isFinite(proof.signedLength) && Math.trunc(proof.signedLength) >= targetSignedLength;
+    };
+
+    const deadline = Date.now() + waitTimeout;
+    let lastProof = await this.getCoreFastForwardProof(normalizedKey);
+    if (satisfies(lastProof)) return lastProof;
+
+    let lastNudgeAt = 0;
+    while (Date.now() < deadline) {
+      if ((Date.now() - lastNudgeAt) >= nudgeEvery) {
+        await this.nudgeCoreHydration(normalizedKey);
+        lastNudgeAt = Date.now();
+      }
+      await new Promise((resolve) => setTimeout(resolve, waitPoll));
+      lastProof = await this.getCoreFastForwardProof(normalizedKey);
+      if (satisfies(lastProof)) {
+        this.logger?.info?.({
+          key: normalizedKey,
+          signedLength: Number.isFinite(lastProof?.signedLength) ? Math.trunc(lastProof.signedLength) : null,
+          targetSignedLength,
+          waitedMs: waitTimeout - Math.max(0, deadline - Date.now())
+        }, '[BlindPeer] Core fast-forward proof reached target after wait');
+        return lastProof;
+      }
+    }
+
+    this.logger?.warn?.({
+      key: normalizedKey,
+      signedLength: Number.isFinite(lastProof?.signedLength) ? Math.trunc(lastProof.signedLength) : null,
+      targetSignedLength,
+      waitedMs: waitTimeout
+    }, '[BlindPeer] Core fast-forward proof did not reach target before timeout');
+    return lastProof;
   }
 
   getMirrorReadinessSnapshot({ includeCores = false, limit = 50, staleThresholdMs } = {}) {

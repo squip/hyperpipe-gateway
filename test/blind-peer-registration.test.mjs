@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import HypercoreId from 'hypercore-id-encoding';
 
-import BlindPeerService from '../src/blind-peer/BlindPeerService.mjs';
+import BlindPeerService, { deriveMirrorIdentifier } from '../src/blind-peer/BlindPeerService.mjs';
 import PublicGatewayService from '../src/PublicGatewayService.mjs';
 
 test('BlindPeerService canonicalizes trusted peer keys from buffers', () => {
@@ -18,6 +18,27 @@ test('BlindPeerService canonicalizes trusted peer keys from buffers', () => {
   assert.equal(service.getTrustedPeers()[0].key, canonical);
   assert.equal(service.isTrustedPeer(rawKey), true);
   assert.equal(service.isTrustedPeer(canonical), true);
+});
+
+test('deriveMirrorIdentifier only treats the wakeup root as the primary identifier', () => {
+  const wakeupKey = randomBytes(32);
+  const systemKey = randomBytes(32);
+
+  const wakeupId = HypercoreId.encode(wakeupKey);
+  const systemId = HypercoreId.encode(systemKey);
+
+  assert.equal(
+    deriveMirrorIdentifier({ key: wakeupKey, referrer: wakeupKey }),
+    wakeupId
+  );
+  assert.equal(
+    deriveMirrorIdentifier({ key: systemKey, referrer: wakeupKey }),
+    null
+  );
+  assert.equal(
+    deriveMirrorIdentifier({ key: systemId, referrer: wakeupId }),
+    null
+  );
 });
 
 test('PublicGatewayService forwards raw peer keys to blind peer service', async () => {
@@ -121,4 +142,77 @@ test('PublicGatewayService forwards raw peer keys to blind peer service', async 
   assert.equal(removedPeers.length, 0);
   const postCleanupStatus = blindPeerService.getStatus();
   assert.equal(postCleanupStatus.trustedPeerCount, 1);
+});
+
+test('BlindPeerService waits for a lease-critical core proof after nudging hydration', async () => {
+  const service = new BlindPeerService({ config: { enabled: true } });
+  const coreKey = randomBytes(32);
+  const discoveryKey = randomBytes(32);
+  let currentLength = 0;
+  let announceCalls = 0;
+
+  const trackerRecord = {
+    key: coreKey,
+    length: currentLength,
+    updated: Date.now(),
+    active: Date.now(),
+    blocksCleared: 0,
+    referrer: coreKey
+  };
+
+  const tracker = {
+    record: trackerRecord,
+    refresh: async () => {},
+    announceToReferrer: () => {
+      announceCalls += 1;
+      currentLength = 32;
+      trackerRecord.length = currentLength;
+      trackerRecord.updated = Date.now();
+      trackerRecord.active = Date.now();
+    }
+  };
+
+  const core = {
+    discoveryKey,
+    length: currentLength,
+    contiguousLength: currentLength,
+    byteLength: 0,
+    ready: async () => {},
+    download: () => {
+      core.length = currentLength;
+      core.contiguousLength = currentLength;
+      core.byteLength = currentLength * 10;
+    }
+  };
+
+  service.blindPeer = {
+    db: {
+      getCoreRecord: async () => ({
+        key: coreKey,
+        length: currentLength,
+        updated: Date.now(),
+        active: Date.now(),
+        blocksCleared: 0,
+        referrer: coreKey
+      })
+    },
+    store: {
+      get: () => core
+    },
+    activeReplication: new Map([
+      [Buffer.from(discoveryKey).toString('hex'), tracker]
+    ])
+  };
+
+  const proof = await service.waitForCoreFastForwardProof(coreKey, {
+    minSignedLength: 16,
+    timeoutMs: 250,
+    pollIntervalMs: 10,
+    nudgeIntervalMs: 0
+  });
+
+  assert.ok(announceCalls >= 1);
+  assert.ok(proof);
+  assert.equal(proof.proofAuthoritative, true);
+  assert.equal(proof.signedLength, 32);
 });
