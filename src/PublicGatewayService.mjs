@@ -11,6 +11,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { schnorr } from '@noble/curves/secp256k1';
 import HypercoreId from 'hypercore-id-encoding';
+import hyperCrypto from 'hypercore-crypto';
 
 import {
   EnhancedHyperswarmPool,
@@ -130,6 +131,63 @@ function normalizeHexPubkey(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim().toLowerCase();
   return /^[0-9a-f]{64}$/.test(trimmed) ? trimmed : null;
+}
+
+function normalizeHexSecret(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(trimmed) || /^[0-9a-f]{128}$/.test(trimmed) ? trimmed : null;
+}
+
+function normalizeRelayAdminKeyPair({ publicKey, secretKey, logger = null } = {}) {
+  const normalizedPublicKey = normalizeHexPubkey(publicKey);
+  const normalizedSecretKey = normalizeHexSecret(secretKey);
+
+  if (!normalizedSecretKey) {
+    return {
+      publicKey: normalizedPublicKey,
+      secretKey: null,
+      source: 'missing'
+    };
+  }
+
+  if (normalizedSecretKey.length === 64) {
+    const seed = Buffer.from(normalizedSecretKey, 'hex');
+    const derived = hyperCrypto.keyPair(seed);
+    const derivedPublicKey = Buffer.from(derived.publicKey).toString('hex');
+    const derivedSecretKey = Buffer.from(derived.secretKey).toString('hex');
+
+    if (normalizedPublicKey && normalizedPublicKey !== derivedPublicKey) {
+      logger?.warn?.('Configured relay admin public key does not match legacy seed-derived Hypercore keypair; using derived public key instead', {
+        configuredPublicKey: normalizedPublicKey,
+        derivedPublicKey
+      });
+    } else {
+      logger?.info?.('Using legacy 64-hex relay admin seed; deriving Hypercore relay keypair at startup', {
+        derivedPublicKey
+      });
+    }
+
+    return {
+      publicKey: derivedPublicKey,
+      secretKey: derivedSecretKey,
+      source: 'legacy-seed'
+    };
+  }
+
+  const derivedPublicKey = normalizedSecretKey.slice(64);
+  if (normalizedPublicKey && normalizedPublicKey !== derivedPublicKey) {
+    logger?.warn?.('Configured relay admin public key does not match the provided Hypercore secret key; using the secret-key-derived public key instead', {
+      configuredPublicKey: normalizedPublicKey,
+      derivedPublicKey
+    });
+  }
+
+  return {
+    publicKey: derivedPublicKey,
+    secretKey: normalizedSecretKey,
+    source: 'hypercore-secret'
+  };
 }
 
 function hexToBytes(hex) {
@@ -1115,11 +1173,18 @@ class PublicGatewayService {
     if (legacyPath) {
       addAlias(legacyPath);
     }
+    const relayAdminKeyPair = normalizeRelayAdminKeyPair({
+      publicKey: raw?.adminPublicKey || process.env.GATEWAY_RELAY_ADMIN_PUBLIC_KEY || null,
+      secretKey: raw?.adminSecretKey || process.env.GATEWAY_RELAY_ADMIN_SECRET_KEY || null,
+      logger: this.logger
+    });
+
     return {
       storageDir: baseDir,
       datasetNamespace: raw?.datasetNamespace || 'public-gateway-relay',
-      adminPublicKey: raw?.adminPublicKey || process.env.GATEWAY_RELAY_ADMIN_PUBLIC_KEY || null,
-      adminSecretKey: raw?.adminSecretKey || process.env.GATEWAY_RELAY_ADMIN_SECRET_KEY || null,
+      adminPublicKey: relayAdminKeyPair.publicKey,
+      adminSecretKey: relayAdminKeyPair.secretKey,
+      adminKeySource: relayAdminKeyPair.source,
       statsIntervalMs: Number.isFinite(statsIntervalMs) && statsIntervalMs > 0 ? statsIntervalMs : undefined,
       replicationTopic: raw?.replicationTopic || null,
       canonicalPath,

@@ -362,7 +362,7 @@ class RedisRegistrationStore {
       : `${this.hostApprovalPrefix}*`;
     do {
       const result = await this.client.scan(cursor, { MATCH: match, COUNT: 100 });
-      cursor = result.cursor;
+      cursor = String(result.cursor);
       const keys = result.keys || [];
       if (!keys.length) continue;
       const values = await this.client.mGet(keys);
@@ -458,7 +458,7 @@ class RedisRegistrationStore {
         MATCH: `${this.relayMemberAclPrefix}${normalizedRelayKey}:*`,
         COUNT: 100
       });
-      cursor = result.cursor;
+      cursor = String(result.cursor);
       const keys = result.keys || [];
       if (!keys.length) continue;
       const values = await this.client.mGet(keys);
@@ -567,7 +567,7 @@ class RedisRegistrationStore {
     let cursor = '0';
     do {
       const result = await this.client.scan(cursor, { MATCH: `${this.prefix}*`, COUNT: 100 });
-      cursor = result.cursor;
+      cursor = String(result.cursor);
       const keys = result.keys || [];
       const relayKeys = keys.filter((key) => !excludePrefixes.some((prefix) => key.startsWith(prefix)));
       if (relayKeys.length === 0) continue;

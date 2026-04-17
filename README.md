@@ -113,9 +113,9 @@ If you want approved clients to receive verified operator identity metadata with
 | `GATEWAY_AUTH_MAX_MIRRORED_BYTES_PER_RELAY` | Optional mirrored-byte quota per relay. `0` disables the quota. |
 | `GATEWAY_FEATURE_HYPERBEE_RELAY` | Enables the embedded gateway relay runtime when set to `true`. |
 | `GATEWAY_RELAY_STORAGE` | Filesystem path for relay storage. |
-| `GATEWAY_RELAY_SEED` | 64-character hex seed for the gateway relay identity. |
-| `GATEWAY_RELAY_ADMIN_PUBLIC_KEY` | 64-character hex relay admin pubkey. |
-| `GATEWAY_RELAY_ADMIN_SECRET_KEY` | 64-character hex relay admin secret key. |
+| `GATEWAY_RELAY_SEED` | Optional legacy 64-character seed. When present, the gateway derives the real Hypercore relay keypair from it at startup. |
+| `GATEWAY_RELAY_ADMIN_PUBLIC_KEY` | 64-character hex relay admin pubkey. Ignored when only a legacy 64-character seed is provided. |
+| `GATEWAY_RELAY_ADMIN_SECRET_KEY` | Preferred 128-character hex Hypercore relay admin secret key. A legacy 64-character seed is also accepted for backward compatibility. |
 | `GATEWAY_RELAY_NAMESPACE` | Dataset namespace for the embedded relay. Defaults to `public-gateway-relay`. |
 
 ### WoT Notes
