@@ -59,6 +59,7 @@ import BlindPeerService from './blind-peer/BlindPeerService.mjs';
 import BlindPeerReplicaManager from './blind-peer/BlindPeerReplicaManager.mjs';
 import { buildWotGraphFromRelays } from './utils/WotGraphLoader.mjs';
 import PubkeyListStore from './utils/PubkeyListStore.mjs';
+import { WebSocketAbuseGuard, resolveClientAddress } from './websocket-abuse-guard.mjs';
 
 const DELEGATION_FALLBACK_MS = 1500;
 const OPEN_JOIN_APPEND_CORES_PURPOSE = 'append-cores';
@@ -602,6 +603,7 @@ class PublicGatewayService {
     this.dispatcherAssignments = new Map();
     this.dispatcherAssignmentTimers = new Map();
     this.dispatcherListeners = [];
+    this.websocketAbuseGuard = new WebSocketAbuseGuard();
     this.blindPeerMetrics = {
       setActive: (active) => {
         blindPeerActiveGauge.set(active ? 1 : 0);
@@ -3257,20 +3259,50 @@ class PublicGatewayService {
       return;
     }
 
+    const clientAddress = resolveClientAddress(req);
     const { relayKey, token } = this.#parseWebSocketRequest(req);
 
+    if (this.websocketAbuseGuard.isClientBlocked(clientAddress)) {
+      this.websocketAbuseGuard.logRejectedAttempt({
+        logger: this.logger,
+        reason: 'client-rate-limited',
+        clientAddress,
+        relayKey,
+        context: {
+          url: req?.url || null
+        }
+      });
+      ws.close(4429, 'Too many invalid attempts');
+      ws.terminate();
+      return;
+    }
+
     if (!relayKey) {
-      this.logger.warn?.({
-        url: req?.url || null
-      }, 'WebSocket rejected: invalid relay key');
+      this.websocketAbuseGuard.recordInvalidAttempt({
+        logger: this.logger,
+        reason: 'invalid-relay-key',
+        clientAddress,
+        context: {
+          url: req?.url || null
+        }
+      });
       ws.close(4404, 'Invalid relay key');
       ws.terminate();
       return;
     }
 
-    const registration = await this.registrationStore.getRelay(relayKey);
+    let registration = null;
+    if (!this.websocketAbuseGuard.shouldSkipMissingRelayLookup(relayKey)) {
+      registration = await this.registrationStore.getRelay(relayKey);
+    }
     if (!registration) {
-      this.logger.warn?.({ relayKey }, 'WebSocket rejected: relay not registered');
+      this.websocketAbuseGuard.rememberMissingRelay(relayKey);
+      this.websocketAbuseGuard.recordInvalidAttempt({
+        logger: this.logger,
+        reason: 'relay-not-registered',
+        clientAddress,
+        relayKey
+      });
       ws.close(4404, 'Relay not registered');
       ws.terminate();
       return;
@@ -3281,7 +3313,12 @@ class PublicGatewayService {
     let tokenValidation = null;
     if (requiresAuth) {
       if (!token) {
-        this.logger.warn?.({ relayKey }, 'WebSocket rejected: token missing');
+        this.websocketAbuseGuard.recordInvalidAttempt({
+          logger: this.logger,
+          reason: 'token-missing',
+          clientAddress,
+          relayKey
+        });
         ws.close(4403, 'Token required');
         ws.terminate();
         return;
@@ -3289,12 +3326,19 @@ class PublicGatewayService {
 
       tokenValidation = await this.#validateToken(token, relayKey);
       if (!tokenValidation) {
-        this.logger.warn?.({ relayKey }, 'WebSocket rejected: token validation failed');
+        this.websocketAbuseGuard.recordInvalidAttempt({
+          logger: this.logger,
+          reason: 'token-validation-failed',
+          clientAddress,
+          relayKey
+        });
         ws.close(4403, 'Invalid token');
         ws.terminate();
         return;
       }
     }
+
+    this.websocketAbuseGuard.noteSuccess(clientAddress);
 
     const { payload: tokenPayload, relayAuthToken, pubkey: tokenPubkey, scope: tokenScope } = tokenValidation || {};
 
