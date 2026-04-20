@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible defect in a Hyperpipe package, app, or release artifact.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - hyperpipe-core
+        - hyperpipe-core-host
+        - hyperpipe-bridge
+        - hyperpipe-desktop
+        - hyperpipe-tui
+        - hyperpipe-gateway
+        - release artifact
+        - docs
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Package version, release tag, or git commit SHA.
+      placeholder: "0.1.0, core-v0.1.0, or abc1234"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Short description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include exact commands, config, or UI steps.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Node version, installer/bundle/package path, and any important runtime settings.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact tokens, private keys, and secrets before pasting anything here.
+    validations:
+      required: false

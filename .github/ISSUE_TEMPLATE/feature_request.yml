@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose a new capability or significant improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Target area
+      options:
+        - hyperpipe-core
+        - hyperpipe-core-host
+        - hyperpipe-bridge
+        - hyperpipe-desktop
+        - hyperpipe-tui
+        - hyperpipe-gateway
+        - docs
+        - release tooling
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the behavior or interface you want.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and impact
+      description: Note compatibility concerns, affected packages, or rollout considerations.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
